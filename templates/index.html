@@ -73,11 +73,21 @@ async function loadData(){
     showData(data);
 }
 
-// -------- STATUS --------
+// -------- STATUS (FIXED) --------
 async function status(){
     let res = await fetch('/status');
     let d = await res.json();
-    document.getElementById("status").innerText = d.status;
+
+    let el = document.getElementById("status");
+
+    // ✅ Show time + color
+    el.innerText = d.status + " (" + d.last_seen_seconds + "s ago)";
+
+    if(d.status === "Connected"){
+        el.style.color = "green";
+    } else {
+        el.style.color = "red";
+    }
 }
 
 // -------- SHOW TABLE --------
@@ -192,8 +202,13 @@ async function runQuery(){
 // -------- AUTO REFRESH --------
 setInterval(loadData, 5000);
 setInterval(status, 3000);
-</script>
 
+// ✅ IMPORTANT: run immediately on page load
+window.onload = function(){
+    loadData();
+    status();
+};
+</script>
 </head>
 
 <body>
