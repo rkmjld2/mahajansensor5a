@@ -94,7 +94,7 @@ def stop():
 def status():
     global esp_connected
 
-    if time.time() - last_seen > 10:
+    if time.time() - last_seen > 30:
         esp_connected = False
 
     return jsonify({"status": "Connected" if esp_connected else "Disconnected"})
