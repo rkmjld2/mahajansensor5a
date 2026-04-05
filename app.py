@@ -32,11 +32,6 @@ def home():
 
 
 # -------- HEARTBEAT (IMPORTANT) --------
-@app.route("/ping")
-def ping():
-    global last_seen
-    last_seen = time.time()
-    return "OK"
 
 
 # -------- RECEIVE DATA --------
