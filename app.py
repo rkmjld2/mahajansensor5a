@@ -7,23 +7,25 @@ app = Flask(__name__)
 
 # -------- CONFIG --------
 DB_CONFIG = {
-    "host": os.getenv("DB_HOST"),
+    "host": os.getenv("DB_HOST", "gateway01.ap-southeast-1.prod.aws.tidbcloud.com"),
     "port": int(os.getenv("DB_PORT", 4000)),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-    "database": os.getenv("DB_NAME"),
-    "connection_timeout": 10
+    "user": os.getenv("DB_USER", "ax6KHc1BNkyuaor.root"),
+    "password": os.getenv("DB_PASSWORD", "EP8isIWoEOQk7DSr"),
+    "database": os.getenv("DB_NAME", "sensor"),
+    "connection_timeout": 5
 }
 
-API_KEY = os.getenv("API_KEY")
+API_KEY = os.getenv("API_KEY", "12b5112c62284ea0b3da0039f298ec7a85ac9a1791044052b6df970640afb1c5")
 
-# -------- GLOBAL STATE --------
-last_seen = 0
+esp_connected = False
 collect_data = True
+last_seen = 0
+
 
 # -------- DB CONNECTION --------
 def get_db():
     return mysql.connector.connect(**DB_CONFIG)
+
 
 # -------- HOME --------
 @app.route("/")
@@ -31,30 +33,25 @@ def home():
     return render_template("index.html")
 
 
-# -------- HEARTBEAT (IMPORTANT) --------
-
-
 # -------- RECEIVE DATA --------
 @app.route("/api/data")
 def receive_data():
-    global last_seen, collect_data
+    global esp_connected, last_seen, collect_data
 
     key = request.args.get("key")
     if key != API_KEY:
         return "Invalid API Key", 403
 
-    current_time = time.time()
-
-    # ✅ Update connection time
-    last_seen = current_time
+    esp_connected = True
+    last_seen = time.time()
 
     if not collect_data:
         return "Stopped"
 
     try:
-        s1 = float(request.args.get("s1"))
-        s2 = float(request.args.get("s2"))
-        s3 = float(request.args.get("s3"))
+        s1 = float(request.args.get("s1", 0))
+        s2 = float(request.args.get("s2", 0))
+        s3 = float(request.args.get("s3", 0))
     except:
         return "Invalid sensor values", 400
 
@@ -77,23 +74,6 @@ def receive_data():
         return str(e), 500
 
 
-# -------- STATUS --------
-@app.route("/status")
-def status():
-    global last_seen
-
-    diff = time.time() - last_seen
-
-    if diff < 20:
-        state = "Connected"
-    else:
-        state = "Disconnected"
-
-    return jsonify({
-        "status": state,
-        "last_seen_seconds": int(diff)
-    })
-
 # -------- START / STOP --------
 @app.route("/start")
 def start():
@@ -109,20 +89,45 @@ def stop():
     return "Stopped"
 
 
+# -------- STATUS --------
+@app.route("/status")
+def status():
+    global esp_connected
+
+    if time.time() - last_seen > 30:
+        esp_connected = False
+
+    return jsonify({"status": "Connected" if esp_connected else "Disconnected"})
+
+
 # -------- GET DATA --------
-@app.route("/api/data")
-def receive_data():
-    global last_seen, collect_data
+@app.route("/data")
+def get_data():
+    try:
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
 
-    key = request.args.get("key")
-    if key != API_KEY:
-        return "Invalid API Key", 403
+        cursor.execute("""
+            SELECT id, sensor1, sensor2, sensor3, timestamp
+            FROM sensor_db
+            ORDER BY id DESC
+            LIMIT 100
+        """)
 
-    # ✅ THIS MUST BE FIRST
-    last_seen = time.time()
+        data = cursor.fetchall()
 
-    if not collect_data:
-        return "Stopped"
+        # 🔥 FORMAT DATE
+        for row in data:
+            if row["timestamp"]:
+                row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
+
+        cursor.close()
+        db.close()
+
+        return jsonify(data)
+
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 
 # -------- SEARCH --------
@@ -149,6 +154,7 @@ def search():
 
         data = cursor.fetchall()
 
+        # 🔥 FORMAT DATE
         for row in data:
             if row["timestamp"]:
                 row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
@@ -162,7 +168,42 @@ def search():
         return jsonify({"error": str(e)})
 
 
-# -------- DOWNLOAD CSV --------
+# -------- CUSTOM QUERY --------
+@app.route("/query", methods=["POST"])
+def run_query():
+    sql = request.form.get("query")
+
+    if not sql:
+        return "No query"
+
+    try:
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
+
+        if sql.lower().startswith("select"):
+            cursor.execute(sql)
+            result = cursor.fetchall()
+            return jsonify(result)
+
+        elif sql.lower().startswith(("delete", "update")):
+            cursor.execute(sql)
+            db.commit()
+
+            return jsonify({
+                "message": "Query OK",
+                "rows_affected": cursor.rowcount
+            })
+
+        else:
+            return "Only SELECT/DELETE/UPDATE allowed"
+
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+    finally:
+        cursor.close()
+        db.close()
+# ......................graph
 @app.route("/download", methods=["POST"])
 def download():
     import csv
@@ -176,42 +217,51 @@ def download():
     if end:
         end = end.replace("T", " ")
 
-    db = get_db()
-    cursor = db.cursor(dictionary=True)
+    try:
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
 
-    cursor.execute("""
-        SELECT id, sensor1, sensor2, sensor3, timestamp
-        FROM sensor_db
-        WHERE timestamp BETWEEN %s AND %s
-        ORDER BY id DESC
-    """, (start, end))
+        cursor.execute("""
+            SELECT id, sensor1, sensor2, sensor3, timestamp
+            FROM sensor_db
+            WHERE timestamp BETWEEN %s AND %s
+            ORDER BY id DESC
+        """, (start, end))
 
-    data = cursor.fetchall()
+        data = cursor.fetchall()
 
-    si = StringIO()
-    writer = csv.writer(si)
+        # format date
+        for row in data:
+            if row["timestamp"]:
+                row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
 
-    writer.writerow(["ID", "Sensor1", "Sensor2", "Sensor3", "Timestamp"])
+        # create CSV
+        si = StringIO()
+        writer = csv.writer(si)
 
-    for row in data:
-        writer.writerow([
-            row["id"],
-            row["sensor1"],
-            row["sensor2"],
-            row["sensor3"],
-            row["timestamp"]
-        ])
+        writer.writerow(["ID","Sensor1","Sensor2","Sensor3","Timestamp"])
 
-    output = si.getvalue()
+        for row in data:
+            writer.writerow([
+                row["id"],
+                row["sensor1"],
+                row["sensor2"],
+                row["sensor3"],
+                row["timestamp"]
+            ])
 
-    cursor.close()
-    db.close()
+        output = si.getvalue()
 
-    return output, 200, {
-        'Content-Type': 'text/csv',
-        'Content-Disposition': 'attachment; filename=data.csv'
-    }
+        cursor.close()
+        db.close()
 
+        return output, 200, {
+            'Content-Type': 'text/csv',
+            'Content-Disposition': 'attachment; filename=data.csv'
+        }
+
+    except Exception as e:
+        return str(e)
 
 if __name__ == "__main__":
     app.run(debug=True)
