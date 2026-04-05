@@ -44,14 +44,12 @@ def ping():
 def receive_data():
     global last_seen, collect_data
 
+    # ✅ UPDATE FIRST (CRITICAL FIX)
+    last_seen = time.time()
+
     key = request.args.get("key")
     if key != API_KEY:
         return "Invalid API Key", 403
-
-    current_time = time.time()
-
-    # ✅ Update connection time
-    last_seen = current_time
 
     if not collect_data:
         return "Stopped"
@@ -81,23 +79,28 @@ def receive_data():
     except Exception as e:
         return str(e), 500
 
-
 # -------- STATUS --------
 @app.route("/status")
 def status():
     global last_seen
 
-    # ✅ 30 sec window
-    if time.time() - last_seen <= 30:
+    if last_seen == 0:
+        return jsonify({
+            "status": "Disconnected",
+            "last_seen_seconds": 0
+        })
+
+    diff = time.time() - last_seen
+
+    if diff < 20:
         state = "Connected"
     else:
         state = "Disconnected"
 
     return jsonify({
         "status": state,
-        "last_seen_seconds": int(time.time() - last_seen)
+        "last_seen_seconds": int(diff)
     })
-
 
 # -------- START / STOP --------
 @app.route("/start")
