@@ -87,17 +87,17 @@ def receive_data():
 def status():
     global last_seen
 
-    # ✅ 30 sec window
-    if time.time() - last_seen <= 30:
+    diff = time.time() - last_seen
+
+    if diff < 20:
         state = "Connected"
     else:
         state = "Disconnected"
 
     return jsonify({
         "status": state,
-        "last_seen_seconds": int(time.time() - last_seen)
+        "last_seen_seconds": int(diff)
     })
-
 
 # -------- START / STOP --------
 @app.route("/start")
@@ -115,32 +115,19 @@ def stop():
 
 
 # -------- GET DATA --------
-@app.route("/data")
-def get_data():
-    try:
-        db = get_db()
-        cursor = db.cursor(dictionary=True)
+@app.route("/api/data")
+def receive_data():
+    global last_seen, collect_data
 
-        cursor.execute("""
-            SELECT id, sensor1, sensor2, sensor3, timestamp
-            FROM sensor_db
-            ORDER BY id DESC
-            LIMIT 100
-        """)
+    key = request.args.get("key")
+    if key != API_KEY:
+        return "Invalid API Key", 403
 
-        data = cursor.fetchall()
+    # ✅ THIS MUST BE FIRST
+    last_seen = time.time()
 
-        for row in data:
-            if row["timestamp"]:
-                row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
-
-        cursor.close()
-        db.close()
-
-        return jsonify(data)
-
-    except Exception as e:
-        return jsonify({"error": str(e)})
+    if not collect_data:
+        return "Stopped"
 
 
 # -------- SEARCH --------
