@@ -1,3 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>ESP8266 Dashboard</title>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body {
+    font-family: Arial;
+    background: #f4f4f4;
+}
+
+.container {
+    width: 90%;
+    margin: auto;
+    text-align: center;
+}
+
+h2 {
+    background: #1976d2;
+    color: white;
+    padding: 15px;
+}
+
+button {
+    padding: 10px 20px;
+    margin: 5px;
+    font-size: 16px;
+}
+
+input, select {
+    padding: 10px;
+    margin: 5px;
+}
+
+table {
+    width: 100%;
+    margin-top: 20px;
+    border-collapse: collapse;
+}
+
+th {
+    background: #1976d2;
+    color: white;
+    padding: 10px;
+}
+
+td {
+    padding: 8px;
+    text-align: center;
+}
+
+canvas {
+    margin-top: 20px;
+    background: white;
+    padding: 10px;
+}
+</style>
+
 <script>
 let chart;
 
@@ -12,21 +73,11 @@ async function loadData(){
     showData(data);
 }
 
-// -------- STATUS (FIXED) --------
+// -------- STATUS --------
 async function status(){
     let res = await fetch('/status');
     let d = await res.json();
-
-    let el = document.getElementById("status");
-
-    // ✅ Show time + color
-    el.innerText = d.status + " (" + d.last_seen_seconds + "s ago)";
-
-    if(d.status === "Connected"){
-        el.style.color = "green";
-    } else {
-        el.style.color = "red";
-    }
+    document.getElementById("status").innerText = d.status;
 }
 
 // -------- SHOW TABLE --------
@@ -141,10 +192,56 @@ async function runQuery(){
 // -------- AUTO REFRESH --------
 setInterval(loadData, 5000);
 setInterval(status, 3000);
-
-// ✅ IMPORTANT: run immediately on page load
-window.onload = function(){
-    loadData();
-    status();
-};
 </script>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>ESP8266 Sensor Dashboard</h2>
+
+<button onclick="start()">Start</button>
+<button onclick="stop()">Stop</button>
+
+<h3>Status: <span id="status">Checking...</span></h3>
+
+<!-- SEARCH -->
+<h3>Search by Date</h3>
+<input type="datetime-local" id="start">
+<input type="datetime-local" id="end">
+<button onclick="search()">Search</button>
+
+<!-- GRAPH -->
+<h3>Graph</h3>
+<select id="chartType">
+    <option value="line">Line</option>
+    <option value="bar">Bar</option>
+    <option value="pie">Pie</option>
+</select>
+
+<button onclick="drawChart()">Draw Graph</button>
+<button onclick="downloadCSV()">Download CSV</button>
+
+<canvas id="myChart"></canvas>
+
+<!-- CUSTOM QUERY -->
+<h3>Custom Query</h3>
+<input type="text" id="query" style="width:400px;">
+<button onclick="runQuery()">Run</button>
+
+<!-- TABLE -->
+<table border="1">
+<thead>
+<tr>
+<th>ID</th><th>S1</th><th>S2</th><th>S3</th><th>Date</th>
+</tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
+
+</div>
+
+</body>
+</html>
