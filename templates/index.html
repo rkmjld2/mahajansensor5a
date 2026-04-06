@@ -208,7 +208,19 @@ async function runQuery(){
         loadData();
     }
 }
+//.... load all records 
+async function loadAll(){
+    autoRefresh = false; // stop refresh
 
+    let res = await fetch('/data_all');
+    let data = await res.json();
+
+    currentData = data;
+    showData(data);
+}    
+
+
+    
 // -------- RESET VIEW --------
 function resetView(){
     autoRefresh = true;
@@ -236,7 +248,7 @@ window.onload = function(){
 <button onclick="start()">Start</button>
 <button onclick="stop()">Stop</button>
 <button onclick="resetView()">Reset Auto View</button>
-
+<button onclick="loadAll()">Load All Data</button>
 <h3>Status: <span id="status">Checking...</span></h3>
 
 <!-- SEARCH -->
