@@ -61,6 +61,8 @@ canvas {
 
 <script>
 let chart;
+let currentData = [];   // ✅ store active data
+let autoRefresh = true; // ✅ control refresh
 
 // -------- START / STOP --------
 async function start(){ await fetch('/start'); }
@@ -68,26 +70,25 @@ async function stop(){ await fetch('/stop'); }
 
 // -------- LOAD DATA --------
 async function loadData(){
+    if(!autoRefresh) return;
+
     let res = await fetch('/data');
     let data = await res.json();
+
+    currentData = data;
     showData(data);
 }
 
-// -------- STATUS (FIXED) --------
+// -------- STATUS --------
 async function status(){
     let res = await fetch('/status');
     let d = await res.json();
 
     let el = document.getElementById("status");
 
-    // ✅ Show time + color
     el.innerText = d.status + " (" + d.last_seen_seconds + "s ago)";
 
-    if(d.status === "Connected"){
-        el.style.color = "green";
-    } else {
-        el.style.color = "red";
-    }
+    el.style.color = (d.status === "Connected") ? "green" : "red";
 }
 
 // -------- SHOW TABLE --------
@@ -112,6 +113,8 @@ async function search(){
     let start = document.getElementById("start").value;
     let end = document.getElementById("end").value;
 
+    autoRefresh = false; // ✅ stop refresh
+
     let res = await fetch('/search', {
         method: "POST",
         headers: {"Content-Type":"application/x-www-form-urlencoded"},
@@ -119,23 +122,22 @@ async function search(){
     });
 
     let data = await res.json();
+
+    currentData = data;
     showData(data);
 }
 
 // -------- GRAPH --------
-async function drawChart(){
+function drawChart(){
 
-    let start = document.getElementById("start").value;
-    let end = document.getElementById("end").value;
+    let data = currentData;
+
+    if(!data || data.length === 0){
+        alert("No data to plot");
+        return;
+    }
+
     let type = document.getElementById("chartType").value;
-
-    let res = await fetch('/search', {
-        method: "POST",
-        headers: {"Content-Type":"application/x-www-form-urlencoded"},
-        body: `start=${start}&end=${end}`
-    });
-
-    let data = await res.json();
 
     let labels = data.map(d => d.timestamp);
     let s1 = data.map(d => d.sensor1);
@@ -161,27 +163,34 @@ async function drawChart(){
 
 // -------- DOWNLOAD --------
 function downloadCSV(){
-    let start = document.getElementById("start").value;
-    let end = document.getElementById("end").value;
 
-    fetch('/download', {
-        method: "POST",
-        headers: {"Content-Type":"application/x-www-form-urlencoded"},
-        body: `start=${start}&end=${end}`
-    })
-    .then(res => res.blob())
-    .then(blob => {
-        let url = window.URL.createObjectURL(blob);
-        let a = document.createElement("a");
-        a.href = url;
-        a.download = "sensor_data.csv";
-        a.click();
+    let data = currentData;
+
+    if(!data || data.length === 0){
+        alert("No data to download");
+        return;
+    }
+
+    let csv = "ID,Sensor1,Sensor2,Sensor3,Timestamp\n";
+
+    data.forEach(r => {
+        csv += `${r.id},${r.sensor1},${r.sensor2},${r.sensor3},${r.timestamp}\n`;
     });
+
+    let blob = new Blob([csv], { type: "text/csv" });
+    let url = window.URL.createObjectURL(blob);
+
+    let a = document.createElement("a");
+    a.href = url;
+    a.download = "query_data.csv";
+    a.click();
 }
 
 // -------- CUSTOM QUERY --------
 async function runQuery(){
     let q = document.getElementById("query").value;
+
+    autoRefresh = false; // ✅ stop refresh
 
     let res = await fetch('/query', {
         method:"POST",
@@ -192,6 +201,7 @@ async function runQuery(){
     let data = await res.json();
 
     if (Array.isArray(data)) {
+        currentData = data;
         showData(data);
     } else {
         alert("✔ " + data.message + "\nRows: " + data.rows_affected);
@@ -199,11 +209,17 @@ async function runQuery(){
     }
 }
 
+// -------- RESET VIEW --------
+function resetView(){
+    autoRefresh = true;
+    loadData();
+}
+
 // -------- AUTO REFRESH --------
 setInterval(loadData, 5000);
 setInterval(status, 3000);
 
-// ✅ IMPORTANT: run immediately on page load
+// -------- INIT --------
 window.onload = function(){
     loadData();
     status();
@@ -219,6 +235,7 @@ window.onload = function(){
 
 <button onclick="start()">Start</button>
 <button onclick="stop()">Stop</button>
+<button onclick="resetView()">Reset Auto View</button>
 
 <h3>Status: <span id="status">Checking...</span></h3>
 
