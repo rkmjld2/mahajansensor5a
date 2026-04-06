@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, render_template
 import mysql.connector
 import time
 import os
+from datetime import timedelta
 
 app = Flask(__name__)
 
@@ -31,20 +32,12 @@ def home():
     return render_template("index.html")
 
 
-# -------- HEARTBEAT (IMPORTANT) --------
-@app.route("/ping")
-def ping():
-    global last_seen
-    last_seen = time.time()
-    return "OK"
-
-
 # -------- RECEIVE DATA --------
 @app.route("/api/data")
 def receive_data():
     global last_seen, collect_data
 
-    # ✅ UPDATE FIRST (CRITICAL FIX)
+    # ✅ update connection time
     last_seen = time.time()
 
     key = request.args.get("key")
@@ -79,16 +72,14 @@ def receive_data():
     except Exception as e:
         return str(e), 500
 
+
 # -------- STATUS --------
 @app.route("/status")
 def status():
     global last_seen
 
     if last_seen == 0:
-        return jsonify({
-            "status": "Disconnected",
-            "last_seen_seconds": 0
-        })
+        return jsonify({"status": "Disconnected", "last_seen_seconds": 0})
 
     diff = time.time() - last_seen
 
@@ -101,6 +92,7 @@ def status():
         "status": state,
         "last_seen_seconds": int(diff)
     })
+
 
 # -------- START / STOP --------
 @app.route("/start")
@@ -117,7 +109,7 @@ def stop():
     return "Stopped"
 
 
-# -------- GET DATA --------
+# -------- GET DATA (FIXED TIME) --------
 @app.route("/data")
 def get_data():
     try:
@@ -135,7 +127,9 @@ def get_data():
 
         for row in data:
             if row["timestamp"]:
-                row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
+                # ✅ UTC → IST conversion
+                ist_time = row["timestamp"] + timedelta(hours=5, minutes=30)
+                row["timestamp"] = ist_time.strftime("%d/%m/%Y %H:%M:%S")
 
         cursor.close()
         db.close()
@@ -146,7 +140,7 @@ def get_data():
         return jsonify({"error": str(e)})
 
 
-# -------- SEARCH --------
+# -------- SEARCH (FIXED TIME) --------
 @app.route("/search", methods=["POST"])
 def search():
     start = request.form.get("start")
@@ -172,7 +166,9 @@ def search():
 
         for row in data:
             if row["timestamp"]:
-                row["timestamp"] = row["timestamp"].strftime("%d/%m/%Y %H:%M:%S")
+                # ✅ UTC → IST conversion
+                ist_time = row["timestamp"] + timedelta(hours=5, minutes=30)
+                row["timestamp"] = ist_time.strftime("%d/%m/%Y %H:%M:%S")
 
         cursor.close()
         db.close()
@@ -183,7 +179,7 @@ def search():
         return jsonify({"error": str(e)})
 
 
-# -------- DOWNLOAD CSV --------
+# -------- DOWNLOAD CSV (FIXED TIME) --------
 @app.route("/download", methods=["POST"])
 def download():
     import csv
@@ -208,6 +204,12 @@ def download():
     """, (start, end))
 
     data = cursor.fetchall()
+
+    # ✅ convert time here also
+    for row in data:
+        if row["timestamp"]:
+            ist_time = row["timestamp"] + timedelta(hours=5, minutes=30)
+            row["timestamp"] = ist_time.strftime("%d/%m/%Y %H:%M:%S")
 
     si = StringIO()
     writer = csv.writer(si)
@@ -235,4 +237,4 @@ def download():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=10000)
