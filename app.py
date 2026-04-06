@@ -235,6 +235,47 @@ def download():
         'Content-Disposition': 'attachment; filename=data.csv'
     }
 
+# -------- CUSTOM QUERY --------
+@app.route("/query", methods=["POST"])
+def run_query():
+    query = request.form.get("query")
 
+    if not query:
+        return jsonify({"error": "No query provided"})
+
+    try:
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
+
+        cursor.execute(query)
+
+        # ✅ If SELECT → return data
+        if query.strip().lower().startswith("select"):
+            data = cursor.fetchall()
+
+            from datetime import timedelta
+
+            for row in data:
+                if "timestamp" in row and row["timestamp"]:
+                    ist_time = row["timestamp"] + timedelta(hours=5, minutes=30)
+                    row["timestamp"] = ist_time.strftime("%d/%m/%Y %H:%M:%S")
+
+            result = data
+
+        else:
+            # ✅ INSERT / UPDATE / DELETE
+            db.commit()
+            result = {
+                "message": "Query executed successfully",
+                "rows_affected": cursor.rowcount
+            }
+
+        cursor.close()
+        db.close()
+
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({"error": str(e)})
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
