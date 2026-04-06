@@ -178,6 +178,36 @@ def search():
     except Exception as e:
         return jsonify({"error": str(e)})
 
+# -------- GET ALL DATA --------
+@app.route("/data_all")
+def get_all_data():
+    try:
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT id, sensor1, sensor2, sensor3, timestamp
+            FROM sensor_db
+            ORDER BY id DESC
+        """)
+
+        data = cursor.fetchall()
+
+        from datetime import timedelta
+
+        for row in data:
+            if row["timestamp"]:
+                ist_time = row["timestamp"] + timedelta(hours=5, minutes=30)
+                row["timestamp"] = ist_time.strftime("%d/%m/%Y %H:%M:%S")
+
+        cursor.close()
+        db.close()
+
+        return jsonify(data)
+
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
 
 # -------- DOWNLOAD CSV (FIXED TIME) --------
 @app.route("/download", methods=["POST"])
